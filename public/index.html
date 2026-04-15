@@ -287,7 +287,7 @@ function calcVol(v) {
   return parseFloat(((v[v.length-1]||0)/(avg||1)).toFixed(2));
 }
 
-// ── 기간별 분석 ──────────────────────────────────
+// ── 기간 별 분석 ──────────────────────────────────
 function analyzePeriod(candle, periodKey) {
   if (!candle) return { score: 50, items: [], verdict: 'wait', hasData: false };
   const allCloses = candle.closes;
