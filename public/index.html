@@ -165,9 +165,9 @@ let activeFilter = 'all';
 
 // 기간 설정
 const PERIODS = [
-  { key: 'short',  label: '단기',  sub: '3개월 일봉', range: '3mo',  interval: '1d',  minLen: 20 },
-  { key: 'mid',    label: '중기',  sub: '6개월 주봉', range: '6mo',  interval: '1wk', minLen: 10 },
-  { key: 'long',   label: '장기',  sub: '1년 주봉',   range: '1y',   interval: '1wk', minLen: 20 },
+  { key: 'short',  label: '단기',  sub: '3개월 일봉', range: '6mo',  interval: '1d',  minLen: 20, displayRange: 63  },
+  { key: 'mid',    label: '중기',  sub: '6개월 주봉', range: '1y',   interval: '1wk', minLen: 10, displayRange: 26  },
+  { key: 'long',   label: '장기',  sub: '1년 주봉',   range: '2y',   interval: '1wk', minLen: 20, displayRange: 52  },
 ];
 
 function renderWatchlist() {
@@ -214,10 +214,27 @@ async function fetchCandle(ticker, range, interval) {
 
 // ── 지표 계산 ──────────────────────────────────────
 function calcRSI(c, p=14) {
-  if (!c||c.length<p+1) return null;
-  let g=0,l=0;
-  for(let i=c.length-p;i<c.length;i++){const d=c[i]-c[i-1];if(d>0)g+=d;else l+=Math.abs(d);}
-  return parseFloat((100-100/(1+(g/p)/((l/p)||0.0001))).toFixed(1));
+  // Wilder EMA RSI (업계 표준 - TradingView, TipRanks 동일 방식)
+  if (!c || c.length < p * 2) return null;
+  // 1단계: 첫 p개로 초기 평균 계산
+  let avgGain = 0, avgLoss = 0;
+  for (let i = 1; i <= p; i++) {
+    const d = c[i] - c[i-1];
+    if (d > 0) avgGain += d; else avgLoss += Math.abs(d);
+  }
+  avgGain /= p;
+  avgLoss /= p;
+  // 2단계: 이후 데이터로 Wilder EMA 적용
+  for (let i = p + 1; i < c.length; i++) {
+    const d = c[i] - c[i-1];
+    const gain = d > 0 ? d : 0;
+    const loss = d < 0 ? Math.abs(d) : 0;
+    avgGain = (avgGain * (p - 1) + gain) / p;
+    avgLoss = (avgLoss * (p - 1) + loss) / p;
+  }
+  if (avgLoss === 0) return 100;
+  const rs = avgGain / avgLoss;
+  return parseFloat((100 - 100 / (1 + rs)).toFixed(1));
 }
 function calcBoll(c, p=20) {
   if (!c||c.length<p) return null;
@@ -255,18 +272,23 @@ function calcVol(v) {
 // ── 기간별 분석 ──────────────────────────────────
 function analyzePeriod(candle, periodKey) {
   if (!candle) return { score: 50, items: [], verdict: 'wait', hasData: false };
-  const c = candle.closes, v = candle.volumes;
-  const items = [];
-  let score = 0;
-  // 주봉(중기·장기)은 크로스 파라미터 다르게, 크로스 점수 비중 낮춤
+  const allCloses = candle.closes;
+  const allVolumes = candle.volumes;
   const isWeekly = periodKey === 'mid' || periodKey === 'long';
   const crossShort = isWeekly ? 4 : 5;
   const crossLong  = isWeekly ? 10 : 20;
-  const crossBig   = isWeekly ? 15 : 25; // 골든/데드 점수
-  const crossSmall = isWeekly ? 7  : 10; // 위/아래 점수
-
-  // RSI — 주봉에서 신호가 더 강하므로 점수 높임
-  const rsi = calcRSI(c);
+  const crossBig   = isWeekly ? 15 : 25;
+  const crossSmall = isWeekly ? 7  : 10;
+  const bollPeriod = periodKey === 'short' ? 20 : periodKey === 'mid' ? 12 : 20;
+  const rsi = calcRSI(allCloses);
+  const macdRaw = calcMACD(allCloses, isWeekly ? 6 : 12, isWeekly ? 13 : 26);
+  const period = PERIODS.find(p => p.key === periodKey);
+  const displayN = period?.displayRange || allCloses.length;
+  const c = allCloses.slice(-displayN);
+  const v = allVolumes.slice(-displayN);
+  const items = [];
+  let score = 0;
+  // RSI
   if (rsi !== null) {
     let badge,bc,desc;
     if(rsi<30){
@@ -297,9 +319,6 @@ function analyzePeriod(candle, periodKey) {
   }
 
   // 볼린저밴드
-  // 기간별 볼린저밴드 period 설정
-  // 단기(일봉): 20일 / 중기(주봉 6개월): 12주 / 장기(주봉 1년): 20주
-  const bollPeriod = periodKey === 'short' ? 20 : periodKey === 'mid' ? 12 : 20;
   const boll = calcBoll(c, bollPeriod);
   if (boll) {
     let badge,bc,desc;
@@ -322,8 +341,7 @@ function analyzePeriod(candle, periodKey) {
   }
 
   // MACD
-  // MACD: 주봉(중기·장기)은 6/13 파라미터 사용 (데이터 수 적어서)
-  const macd = isWeekly ? calcMACD(c, 6, 13) : calcMACD(c, 12, 26);
+  const macd = macdRaw;
   if (macd !== null) {
     let badge,bc,desc;
     if(macd>0){score+=10;badge='상승 에너지';bc='ib-good';desc='상승 힘이 더 강함';}
