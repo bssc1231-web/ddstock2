@@ -36,6 +36,16 @@ export async function onRequest({ request, env }) {
     });
 
     const data = await res.json();
+    if (!res.ok) {
+      return new Response(JSON.stringify({
+        error: 'Anthropic API ' + res.status,
+        detail: data,
+        bodyPreview: JSON.stringify(body).substring(0, 300)
+      }), {
+        status: res.status,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders }
+      });
+    }
     return new Response(JSON.stringify(data), {
       status: res.status,
       headers: { 'Content-Type': 'application/json', ...corsHeaders }
