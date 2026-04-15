@@ -429,6 +429,51 @@ function buildOverallDesc(periods, overall) {
 }
 
 // ── 렌더링 ────────────────────────────────────────
+function buildAIBox(d) {
+  if (d.aiLoading) {
+    return '<div class="ai-box"><div class="ai-loading">🤖 AI 분석 중...</div></div>';
+  }
+  if (!d.aiAnalysis) {
+    const errMsg = d.aiError ? d.aiError.substring(0, 80) : '오류';
+    return '<div class="ai-box"><div class="ai-error">AI 분석 실패: ' + errMsg + '</div></div>';
+  }
+  const ai = d.aiAnalysis;
+  const sentClass = ai.news_sentiment === 'positive' ? 'pos' : ai.news_sentiment === 'negative' ? 'neg' : 'neu';
+  const sentText = ai.news_sentiment === 'positive' ? '뉴스 긍정' : ai.news_sentiment === 'negative' ? '뉴스 부정' : '뉴스 중립';
+  const icon = ai.verdict === 'buy' ? '🟢' : ai.verdict === 'sell' ? '🔴' : '🟡';
+  const label = ai.verdict === 'buy' ? 'AI: 지금 사기 좋아요' : ai.verdict === 'sell' ? 'AI: 팔 타이밍이에요' : 'AI: 좀 더 기다려요';
+
+  let newsHtml = '';
+  if (d.news && d.news.length > 0) {
+    newsHtml = '<div class="ai-news-title">최근 뉴스</div>' +
+      d.news.slice(0, 4).map(n =>
+        '<div class="ai-news-item">· ' + n.headline + ' <span style="color:#ddd">(' + n.source + ')</span></div>'
+      ).join('');
+  }
+
+  const cachedHtml = aiCache[d.ticker] ? '<div class="ai-cached">📦 캐시됨 (30분 유지)</div>' : '';
+
+  return '<div class="ai-box">' +
+    '<div class="ai-box-header">' +
+      '<div class="ai-box-title">🤖 AI 종합 분석 (기술 + 뉴스)</div>' +
+      '<span class="ai-sent ' + sentClass + '">' + sentText + '</span>' +
+    '</div>' +
+    '<div class="ai-verdict-row">' +
+      '<div class="ai-verdict-icon">' + icon + '</div>' +
+      '<div>' +
+        '<div class="ai-verdict-label">' + label + '</div>' +
+        '<div class="ai-verdict-sub">AI 종합 점수 ' + ai.score + '점</div>' +
+      '</div>' +
+    '</div>' +
+    '<div class="ai-body">' +
+      '<div class="ai-summary">' + ai.summary + '</div>' +
+      '<div class="ai-summary" style="font-size:12px;color:#666;margin-top:4px">' + ai.news_impact + '</div>' +
+      newsHtml +
+    '</div>' +
+    cachedHtml +
+  '</div>';
+}
+
 function renderResults() {
   let data = [...scanResults].filter(d=>!d.error);
   if (activeFilter==='buy') data=data.filter(d=>d.overall?.verdict==='buy');
@@ -510,33 +555,10 @@ function renderResults() {
       </div>
 
       <div class="conclusion ${ov.verdict}">${d.conclusionText || ''}</div>
-      <div class="ai-box">
-        \${d.aiLoading ? '<div class="ai-loading">🤖 AI 분석 중...</div>' :
-          d.aiAnalysis ? \`
-          <div class="ai-box-header">
-            <div class="ai-box-title">🤖 AI 종합 분석 (기술적 지표 + 뉴스)</div>
-            <span class="ai-sent \${d.aiAnalysis.news_sentiment==='positive'?'pos':d.aiAnalysis.news_sentiment==='negative'?'neg':'neu'}">
-              뉴스 \${d.aiAnalysis.news_sentiment==='positive'?'긍정':d.aiAnalysis.news_sentiment==='negative'?'부정':'중립'}
-            </span>
-          </div>
-          <div class="ai-verdict-row">
-            <div class="ai-verdict-icon">\${d.aiAnalysis.verdict==='buy'?'🟢':d.aiAnalysis.verdict==='sell'?'🔴':'🟡'}</div>
-            <div>
-              <div class="ai-verdict-label">\${d.aiAnalysis.verdict==='buy'?'AI: 지금 사기 좋아요':d.aiAnalysis.verdict==='sell'?'AI: 팔 타이밍이에요':'AI: 좀 더 기다려요'}</div>
-              <div class="ai-verdict-sub">AI 종합 점수 \${d.aiAnalysis.score}점</div>
-            </div>
-          </div>
-          <div class="ai-body">
-            <div class="ai-summary">\${d.aiAnalysis.summary}</div>
-            <div class="ai-summary" style="font-size:12px;color:#666;margin-top:4px">\${d.aiAnalysis.news_impact}</div>
-            \${d.news&&d.news.length>0?\`<div class="ai-news-title">최근 뉴스</div>\${d.news.slice(0,4).map(n=>'<div class="ai-news-item">· '+n.headline+' <span style="color:#ddd">('+n.source+')</span></div>').join('')}\`:''}
-          </div>
-          \${aiCache[d.ticker]?'<div class="ai-cached">📦 캐시됨 (30분 유지)</div>':''}\` 
-          : \`<div class="ai-error">AI 분석 실패: \${d.aiError||'오류'}</div>\`
-        }
-      </div>
 
-      <div class="detail-toggle" onclick="toggleDetail('\${uid}')">
+      ${buildAIBox(d)}
+
+      <div class="detail-toggle" onclick="toggleDetail('${uid}')">
         <span id="toggle-icon-${uid}">▶</span> 지표 상세 보기
       </div>
       <div class="detail-section" id="detail-${uid}">
