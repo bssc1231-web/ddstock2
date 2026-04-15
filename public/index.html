@@ -221,8 +221,11 @@ function calcRSI(c, p=14) {
 }
 function calcBoll(c, p=20) {
   if (!c||c.length<p) return null;
-  const s=c.slice(-p),m=s.reduce((a,b)=>a+b,0)/p;
-  const std=Math.sqrt(s.reduce((a,b)=>a+(b-m)**2,0)/p);
+  // 실제 데이터 수에 맞게 period 조정 (너무 길면 데이터 길이의 절반으로)
+  const actualP = Math.min(p, Math.floor(c.length * 0.7));
+  if (actualP < 5) return null;
+  const s=c.slice(-actualP),m=s.reduce((a,b)=>a+b,0)/actualP;
+  const std=Math.sqrt(s.reduce((a,b)=>a+(b-m)**2,0)/actualP);
   const last=c[c.length-1],u=m+2*std,l=m-2*std;
   if(u===l) return null;
   const pct=(last-l)/(u-l);
@@ -238,10 +241,10 @@ function calcCross(c, short=5, long=20) {
   if(s5p>=s20p&&s5n<s20n)return 'dead';
   return s5n>s20n?'above':'below';
 }
-function calcMACD(c) {
-  if(!c||c.length<26)return null;
+function calcMACD(c, fast=12, slow=26) {
+  if(!c||c.length<slow) return null;
   const ema=(a,p)=>{const k=2/(p+1);let e=a[0];for(let i=1;i<a.length;i++)e=a[i]*k+e*(1-k);return e;};
-  return parseFloat((ema(c,12)-ema(c,26)).toFixed(4));
+  return parseFloat((ema(c,fast)-ema(c,slow)).toFixed(4));
 }
 function calcVol(v) {
   if(!v||v.length<6)return null;
@@ -294,7 +297,10 @@ function analyzePeriod(candle, periodKey) {
   }
 
   // 볼린저밴드
-  const boll = calcBoll(c);
+  // 기간별 볼린저밴드 period 설정
+  // 단기(일봉): 20일 / 중기(주봉 6개월): 12주 / 장기(주봉 1년): 20주
+  const bollPeriod = periodKey === 'short' ? 20 : periodKey === 'mid' ? 12 : 20;
+  const boll = calcBoll(c, bollPeriod);
   if (boll) {
     let badge,bc,desc;
     if(boll.pos==='lower'){score+=20;badge='매수 신호';bc='ib-good';desc=`볼밴 하단 (${boll.pct}%) — 바닥 근처`;}
@@ -316,7 +322,8 @@ function analyzePeriod(candle, periodKey) {
   }
 
   // MACD
-  const macd = calcMACD(c);
+  // MACD: 주봉(중기·장기)은 6/13 파라미터 사용 (데이터 수 적어서)
+  const macd = isWeekly ? calcMACD(c, 6, 13) : calcMACD(c, 12, 26);
   if (macd !== null) {
     let badge,bc,desc;
     if(macd>0){score+=10;badge='상승 에너지';bc='ib-good';desc='상승 힘이 더 강함';}
