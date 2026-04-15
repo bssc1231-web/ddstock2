@@ -229,10 +229,10 @@ function calcBoll(c, p=20) {
   return {pct:parseFloat((pct*100).toFixed(1)),upper:parseFloat(u.toFixed(2)),lower:parseFloat(l.toFixed(2)),pos:pct<0.2?'lower':pct>0.8?'upper':'mid'};
 }
 function calcSMA(c,p){if(!c||c.length<p)return null;return c.slice(-p).reduce((a,b)=>a+b,0)/p;}
-function calcCross(c) {
-  if(!c||c.length<22)return null;
-  const s5n=calcSMA(c,5),s20n=calcSMA(c,20);
-  const s5p=calcSMA(c.slice(0,-1),5),s20p=calcSMA(c.slice(0,-1),20);
+function calcCross(c, short=5, long=20) {
+  if(!c||c.length<long+2)return null;
+  const s5n=calcSMA(c,short),s20n=calcSMA(c,long);
+  const s5p=calcSMA(c.slice(0,-1),short),s20p=calcSMA(c.slice(0,-1),long);
   if(!s5n||!s20n||!s5p||!s20p)return null;
   if(s5p<=s20p&&s5n>s20n)return 'golden';
   if(s5p>=s20p&&s5n<s20n)return 'dead';
@@ -255,37 +255,67 @@ function analyzePeriod(candle, periodKey) {
   const c = candle.closes, v = candle.volumes;
   const items = [];
   let score = 0;
+  // 주봉(중기·장기)은 크로스 파라미터 다르게, 크로스 점수 비중 낮춤
+  const isWeekly = periodKey === 'mid' || periodKey === 'long';
+  const crossShort = isWeekly ? 4 : 5;
+  const crossLong  = isWeekly ? 10 : 20;
+  const crossBig   = isWeekly ? 15 : 25; // 골든/데드 점수
+  const crossSmall = isWeekly ? 7  : 10; // 위/아래 점수
 
+  // RSI — 주봉에서 신호가 더 강하므로 점수 높임
   const rsi = calcRSI(c);
   if (rsi !== null) {
     let badge,bc,desc;
-    if(rsi<30){score+=25;badge='매수 신호';bc='ib-good';desc='과매도 — 반등 가능성';}
-    else if(rsi<45){score+=10;badge='약한 매수';bc='ib-good';desc='저평가 구간';}
-    else if(rsi>75){score-=20;badge='매도 신호';bc='ib-bad';desc='과매수 — 조정 위험';}
-    else if(rsi>60){score-=5;badge='살짝 과열';bc='ib-neu';desc='다소 높은 수준';}
-    else{badge='중립';bc='ib-neu';desc='보통 상태';}
+    if(rsi<30){
+      score += isWeekly ? 35 : 25;
+      badge='매수 신호';bc='ib-good';
+      desc=`RSI ${rsi} — 과매도 구간. ${isWeekly?'주봉 기준으로 매우 강한 반등 신호!':'단기 반등 가능성 높음'}`;
+    } else if(rsi<40){
+      score += isWeekly ? 20 : 15;
+      badge='약한 매수';bc='ib-good';
+      desc=`RSI ${rsi} — 저평가 구간. 진입 고려해볼 만해요.`;
+    } else if(rsi<50){
+      score += 8;
+      badge='중립 하단';bc='ib-neu';
+      desc=`RSI ${rsi} — 중립이지만 살짝 낮은 편이에요.`;
+    } else if(rsi>75){
+      score -= isWeekly ? 25 : 20;
+      badge='매도 신호';bc='ib-bad';
+      desc=`RSI ${rsi} — 과매수. 조정 위험이 있어요.`;
+    } else if(rsi>60){
+      score -= 5;
+      badge='살짝 과열';bc='ib-neu';
+      desc=`RSI ${rsi} — 다소 높은 수준이에요.`;
+    } else {
+      badge='중립';bc='ib-neu';
+      desc=`RSI ${rsi} — 보통 상태예요.`;
+    }
     items.push({icon:'📊',name:'RSI',val:`${rsi}`,badge,bc,desc});
   }
 
+  // 볼린저밴드
   const boll = calcBoll(c);
   if (boll) {
     let badge,bc,desc;
-    if(boll.pos==='lower'){score+=22;badge='매수 신호';bc='ib-good';desc=`볼밴 하단 (${boll.pct}%) — 바닥 근처`;}
+    if(boll.pos==='lower'){score+=20;badge='매수 신호';bc='ib-good';desc=`볼밴 하단 (${boll.pct}%) — 바닥 근처`;}
     else if(boll.pos==='upper'){score-=15;badge='매도 신호';bc='ib-bad';desc=`볼밴 상단 (${boll.pct}%) — 천장 근처`;}
     else{badge='중립';bc='ib-neu';desc=`볼밴 중간 (${boll.pct}%)`;}
     items.push({icon:'📏',name:'볼린저밴드',val:`하단 $${boll.lower} / 상단 $${boll.upper}`,badge,bc,desc});
   }
 
-  const cross = calcCross(c);
+  // 골든/데드크로스 (기간별 파라미터)
+  const cross = calcCross(c, crossShort, crossLong);
   if (cross) {
     let badge,bc,desc,val;
-    if(cross==='golden'){score+=25;badge='골든크로스🎯';bc='ib-good';val='골든크로스!';desc='강한 상승 전환 신호';}
-    else if(cross==='dead'){score-=25;badge='데드크로스💀';bc='ib-bad';val='데드크로스!';desc='강한 하락 전환 신호';}
-    else if(cross==='above'){score+=10;badge='상승 흐름';bc='ib-good';val='단기선 > 장기선';desc='상승 추세 유지 중';}
-    else{score-=10;badge='하락 흐름';bc='ib-bad';val='단기선 < 장기선';desc='하락 추세 진행 중';}
+    const crossLabel = isWeekly ? `${crossShort}주선 vs ${crossLong}주선` : `${crossShort}일선 vs ${crossLong}일선`;
+    if(cross==='golden'){score+=crossBig;badge='골든크로스🎯';bc='ib-good';val='골든크로스!';desc=`${crossLabel} — 강한 상승 전환 신호`;}
+    else if(cross==='dead'){score-=crossBig;badge='데드크로스💀';bc='ib-bad';val='데드크로스!';desc=`${crossLabel} — 강한 하락 전환 신호`;}
+    else if(cross==='above'){score+=crossSmall;badge='상승 흐름';bc='ib-good';val=`단기선 > 장기선`;desc=`${crossLabel} — 상승 추세 유지 중`;}
+    else{score-=crossSmall;badge='하락 흐름';bc='ib-bad';val=`단기선 < 장기선`;desc=`${crossLabel} — 하락 추세 진행 중`;}
     items.push({icon:'✂️',name:'골든/데드크로스',val,badge,bc,desc});
   }
 
+  // MACD
   const macd = calcMACD(c);
   if (macd !== null) {
     let badge,bc,desc;
@@ -294,6 +324,7 @@ function analyzePeriod(candle, periodKey) {
     items.push({icon:'⚡',name:'MACD',val:macd.toFixed(4),badge,bc,desc});
   }
 
+  // 거래량
   const vol = calcVol(v);
   if (vol !== null) {
     let badge,bc,desc;
