@@ -102,6 +102,24 @@ select{font-size:12px;padding:5px 9px;border:1px solid #ddd;border-radius:8px;ba
 .conclusion.wait{background:#fdf8ed;border-left:3px solid #EF9F27}
 
 .loading-row{text-align:center;padding:2.5rem;font-size:14px;color:#aaa}
+.ai-analysis{margin:0 18px 14px;border-radius:12px;overflow:hidden;border:1px solid #e5e5e0}
+.ai-analysis-header{display:flex;align-items:center;gap:8px;padding:10px 14px;background:#f8f8f4;border-bottom:1px solid #e5e5e0}
+.ai-analysis-title{font-size:12px;font-weight:700;color:#555;flex:1}
+.ai-sentiment{font-size:11px;font-weight:600;padding:2px 8px;border-radius:99px}
+.ai-sentiment.pos{background:#E1F5EE;color:#085041}
+.ai-sentiment.neg{background:#FAECE7;color:#712B13}
+.ai-sentiment.neu{background:#f0f0ec;color:#666}
+.ai-verdict-row{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid #f0f0ea}
+.ai-verdict-icon{font-size:26px;line-height:1}
+.ai-verdict-label{font-size:16px;font-weight:700}
+.ai-verdict-sub{font-size:11px;color:#aaa;margin-top:2px}
+.ai-body{padding:10px 14px}
+.ai-summary{font-size:13px;color:#444;line-height:1.65;margin-bottom:8px}
+.ai-news{display:flex;flex-direction:column;gap:4px}
+.ai-news-item{font-size:11px;color:#888;padding:4px 0;border-bottom:1px solid #f5f5f2;line-height:1.4}
+.ai-news-item:last-child{border-bottom:none}
+.ai-loading{padding:14px;font-size:12px;color:#aaa;text-align:center}
+.ai-error{padding:10px 14px;font-size:12px;color:#c0392b}
 .last-scan{font-size:11px;color:#bbb;margin-bottom:10px}
 .err-card{background:#fff;border:2px solid #f0bebe;border-radius:16px;padding:1rem 1.25rem}
 </style>
@@ -508,6 +526,35 @@ function renderResults() {
 
       <div class="conclusion ${ov.verdict}">${d.conclusionText || ''}</div>
 
+      <div class="ai-analysis" id="ai-box-${uid}">
+        ${d.aiLoading ? '<div class="ai-loading">🤖 AI가 뉴스와 지표를 종합 분석 중...</div>' :
+          d.aiAnalysis ? `
+          <div class="ai-analysis-header">
+            <div class="ai-analysis-title">🤖 AI 종합 분석 (기술 + 뉴스)</div>
+            <span class="ai-sentiment ${d.aiAnalysis.news_sentiment === 'positive' ? 'pos' : d.aiAnalysis.news_sentiment === 'negative' ? 'neg' : 'neu'}">
+              뉴스 ${d.aiAnalysis.news_sentiment === 'positive' ? '긍정' : d.aiAnalysis.news_sentiment === 'negative' ? '부정' : '중립'}
+            </span>
+          </div>
+          <div class="ai-verdict-row">
+            <div class="ai-verdict-icon">${d.aiAnalysis.verdict === 'buy' ? '🟢' : d.aiAnalysis.verdict === 'sell' ? '🔴' : '🟡'}</div>
+            <div>
+              <div class="ai-verdict-label">${d.aiAnalysis.verdict === 'buy' ? 'AI: 지금 사기 좋아요' : d.aiAnalysis.verdict === 'sell' ? 'AI: 팔 타이밍이에요' : 'AI: 좀 더 기다려요'}</div>
+              <div class="ai-verdict-sub">종합 점수 ${d.aiAnalysis.score}점</div>
+            </div>
+          </div>
+          <div class="ai-body">
+            <div class="ai-summary">${d.aiAnalysis.summary}</div>
+            <div style="font-size:11px;font-weight:700;color:#bbb;margin:8px 0 4px;letter-spacing:.05em">뉴스 영향</div>
+            <div class="ai-summary" style="font-size:12px;color:#666">${d.aiAnalysis.news_impact}</div>
+            ${d.news && d.news.length > 0 ? `
+            <div style="font-size:11px;font-weight:700;color:#bbb;margin:8px 0 4px;letter-spacing:.05em">최근 뉴스</div>
+            <div class="ai-news">
+              ${d.news.slice(0,4).map(n => `<div class="ai-news-item">· ${n.headline} <span style="color:#ccc">(${n.source})</span></div>`).join('')}
+            </div>` : ''}
+          </div>` : '<div class="ai-error">AI 분석을 불러오지 못했어요.</div>'
+        }
+      </div>
+
       <div class="detail-toggle" onclick="toggleDetail('${uid}')">
         <span id="toggle-icon-${uid}">▶</span> 지표 상세 보기
       </div>
@@ -535,6 +582,77 @@ function toggleDetail(uid) {
     section.classList.add('open');
     icon.textContent = '▼';
   }
+}
+
+// ── 뉴스 가져오기 (Finnhub) ──────────────────────────
+async function fetchNews(ticker) {
+  try {
+    const to = new Date();
+    const from = new Date(Date.now() - 5 * 86400000); // 5일치
+    const fmt = d => d.toISOString().split('T')[0];
+    const r = await fetch(
+      `https://finnhub.io/api/v1/company-news?symbol=${ticker}&from=${fmt(from)}&to=${fmt(to)}&token=${FINNHUB_KEY}`,
+      { signal: AbortSignal.timeout(6000) }
+    );
+    const news = await r.json();
+    if (!Array.isArray(news)) return [];
+    // 최신 7개만
+    return news.slice(0, 7).map(n => ({
+      headline: n.headline,
+      source: n.source,
+      datetime: n.datetime
+    }));
+  } catch(e) { return []; }
+}
+
+// ── Claude AI 종합 분석 ──────────────────────────────
+async function fetchAIAnalysis(ticker, price, change, periods, news) {
+  const techSummary = Object.entries(periods).map(([key, pd]) => {
+    const label = PERIODS.find(p=>p.key===key)?.label || key;
+    if (!pd.hasData) return `${label}: 데이터 없음`;
+    const items = pd.items.map(i => `${i.name} ${i.badge}(${i.val})`).join(', ');
+    return `${label}(${pd.score}점/${pd.verdict==='buy'?'매수':pd.verdict==='sell'?'매도':'관망'}): ${items}`;
+  }).join('\n');
+
+  const newsSummary = news.length > 0
+    ? news.map((n,i) => `${i+1}. ${n.headline} (${n.source})`).join('\n')
+    : '최근 뉴스 없음';
+
+  const today = new Date().toLocaleDateString('ko-KR');
+
+  const prompt = `당신은 주식 기술적 분석과 뉴스 분석을 결합하는 전문가입니다.
+오늘 날짜: ${today}
+종목: ${ticker}
+현재가: $${price} (${change >= 0 ? '+' : ''}${change}%)
+
+[기술적 분석]
+${techSummary}
+
+[최근 5일 뉴스]
+${newsSummary}
+
+위 데이터를 종합 분석해서 반드시 아래 JSON 형식으로만 답하세요. 다른 텍스트 없이 JSON만:
+{
+  "verdict": "buy 또는 wait 또는 sell 중 하나",
+  "score": 0에서 100 사이 정수,
+  "news_sentiment": "positive 또는 neutral 또는 negative 중 하나",
+  "summary": "기술적 분석과 뉴스를 종합한 2문장 한국어 요약",
+  "news_impact": "뉴스가 주가에 미치는 영향 1문장 한국어"
+}`;
+
+  const r = await fetch('/api/ai/analyze', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 1000,
+      messages: [{ role: 'user', content: prompt }]
+    })
+  });
+  const data = await r.json();
+  const text = data.content?.[0]?.text || '';
+  const clean = text.replace(/```json|```/g, '').trim();
+  return JSON.parse(clean);
 }
 
 async function processTicker(ticker) {
@@ -568,10 +686,28 @@ async function processTicker(ticker) {
     else if (overall.verdict==='sell') conclusionText = `${bads.join('·')} 구간에서 하락 신호가 나오고 있어요. 보유 중이라면 매도 타이밍을 고려해보세요.`;
     else conclusionText = '단기·중기·장기 신호가 엇갈려요. 더 명확한 신호가 나올 때까지 기다리는 게 안전해요.';
 
+    // 뉴스 가져오기 (AI 분석용)
+    const news = await fetchNews(ticker);
+
     scanResults.push({
       ticker, price: quoteRes.price, change: quoteRes.change,
-      periods, overall, overallDesc, conclusionText
+      periods, overall, overallDesc, conclusionText,
+      news, aiAnalysis: null, aiLoading: true
     });
+    renderResults();
+
+    // AI 분석 비동기 (렌더링 블로킹 안 함)
+    fetchAIAnalysis(ticker, quoteRes.price, quoteRes.change, periods, news)
+      .then(ai => {
+        const item = scanResults.find(d => d.ticker === ticker);
+        if (item) { item.aiAnalysis = ai; item.aiLoading = false; }
+        renderResults();
+      })
+      .catch(() => {
+        const item = scanResults.find(d => d.ticker === ticker);
+        if (item) { item.aiLoading = false; }
+        renderResults();
+      });
   } catch(e) {
     scanResults.push({ ticker, error: true, msg: `오류: ${e.message}` });
   }
