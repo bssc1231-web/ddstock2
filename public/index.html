@@ -278,7 +278,7 @@ function analyzePeriod(candle, periodKey) {
   const crossShort = isWeekly ? 4 : 5;
   const crossLong  = isWeekly ? 10 : 20;
   const crossBig   = isWeekly ? 15 : 25;
-  const crossSmall = isWeekly ? 7  : 10;
+  const crossSmall = isWeekly ? 9  : 14;
   const bollPeriod = periodKey === 'short' ? 20 : periodKey === 'mid' ? 12 : 20;
   const rsi = calcRSI(allCloses);
   const macdRaw = calcMACD(allCloses, isWeekly ? 6 : 12, isWeekly ? 13 : 26);
@@ -292,28 +292,29 @@ function analyzePeriod(candle, periodKey) {
   if (rsi !== null) {
     let badge,bc,desc;
     if(rsi<30){
-      score += isWeekly ? 35 : 25;
+      score += isWeekly ? 35 : 28;
       badge='매수 신호';bc='ib-good';
       desc=`RSI ${rsi} — 과매도 구간. ${isWeekly?'주봉 기준으로 매우 강한 반등 신호!':'단기 반등 가능성 높음'}`;
     } else if(rsi<40){
-      score += isWeekly ? 20 : 15;
+      score += isWeekly ? 22 : 18;
       badge='약한 매수';bc='ib-good';
       desc=`RSI ${rsi} — 저평가 구간. 진입 고려해볼 만해요.`;
     } else if(rsi<50){
-      score += 8;
+      score += 10;
       badge='중립 하단';bc='ib-neu';
       desc=`RSI ${rsi} — 중립이지만 살짝 낮은 편이에요.`;
-    } else if(rsi>75){
-      score -= isWeekly ? 25 : 20;
-      badge='매도 신호';bc='ib-bad';
-      desc=`RSI ${rsi} — 과매수. 조정 위험이 있어요.`;
-    } else if(rsi>60){
-      score -= 5;
-      badge='살짝 과열';bc='ib-neu';
-      desc=`RSI ${rsi} — 다소 높은 수준이에요.`;
-    } else {
+    } else if(rsi<=60){
+      score += 3;
       badge='중립';bc='ib-neu';
       desc=`RSI ${rsi} — 보통 상태예요.`;
+    } else if(rsi<=75){
+      score += 0;
+      badge='중립 상단';bc='ib-neu';
+      desc=`RSI ${rsi} — 살짝 높지만 강한 추세에선 정상 범위예요.`;
+    } else {
+      score -= isWeekly ? 20 : 15;
+      badge='과매수 주의';bc='ib-bad';
+      desc=`RSI ${rsi} — 과매수 구간. 단기 조정 가능성이 있어요.`;
     }
     items.push({icon:'📊',name:'RSI',val:`${rsi}`,badge,bc,desc});
   }
@@ -322,8 +323,8 @@ function analyzePeriod(candle, periodKey) {
   const boll = calcBoll(c, bollPeriod);
   if (boll) {
     let badge,bc,desc;
-    if(boll.pos==='lower'){score+=20;badge='매수 신호';bc='ib-good';desc=`볼밴 하단 (${boll.pct}%) — 바닥 근처`;}
-    else if(boll.pos==='upper'){score-=15;badge='매도 신호';bc='ib-bad';desc=`볼밴 상단 (${boll.pct}%) — 천장 근처`;}
+    if(boll.pos==='lower'){score+=18;badge='매수 신호';bc='ib-good';desc=`볼밴 하단 (${boll.pct}%) — 바닥 근처, 반등 가능성`;}
+    else if(boll.pos==='upper'){score-=8;badge='상단 근접';bc='ib-neu';desc=`볼밴 상단 (${boll.pct}%) — 천장 근처지만 강한 추세는 유지될 수 있어요`;}
     else{badge='중립';bc='ib-neu';desc=`볼밴 중간 (${boll.pct}%)`;}
     items.push({icon:'📏',name:'볼린저밴드',val:`하단 $${boll.lower} / 상단 $${boll.upper}`,badge,bc,desc});
   }
@@ -344,9 +345,18 @@ function analyzePeriod(candle, periodKey) {
   const macd = macdRaw;
   if (macd !== null) {
     let badge,bc,desc;
-    if(macd>0){score+=10;badge='상승 에너지';bc='ib-good';desc='상승 힘이 더 강함';}
-    else{score-=8;badge='하락 에너지';bc='ib-bad';desc='하락 힘이 더 강함';}
+    if(macd>0){score+=12;badge='상승 에너지';bc='ib-good';desc='상승 힘이 더 강함';}
+    else{score-=10;badge='하락 에너지';bc='ib-bad';desc='하락 힘이 더 강함';}
     items.push({icon:'⚡',name:'MACD',val:macd.toFixed(4),badge,bc,desc});
+  }
+
+  // 시너지 보너스: RSI>50 + MACD양수 + 크로스상승 동시 → 강한 추세 신호 +10
+  if (rsi !== null && rsi > 50 && macd !== null && macd > 0 && (cross === 'above' || cross === 'golden')) {
+    score += 10;
+  }
+  // 역시너지: RSI<50 + MACD음수 + 크로스하락 동시 → 강한 하락 추세 -10
+  if (rsi !== null && rsi < 50 && macd !== null && macd < 0 && (cross === 'below' || cross === 'dead')) {
+    score -= 10;
   }
 
   // 거래량
@@ -359,7 +369,7 @@ function analyzePeriod(candle, periodKey) {
     items.push({icon:'📦',name:'거래량',val:`평균 대비 ${vol}배`,badge,bc,desc});
   }
 
-  const finalScore = Math.max(0, Math.min(100, score + 30));
+  const finalScore = Math.max(0, Math.min(100, score + 35));
   const verdict = finalScore >= 62 ? 'buy' : finalScore <= 38 ? 'sell' : 'wait';
   return { score: finalScore, items, verdict, hasData: items.length >= 2 };
 }
