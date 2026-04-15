@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>주식 매매 신호</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f4f4f0;color:#1a1a1a;min-height:100vh}
+.wrap{max-width:820px;margin:0 auto;padding:1.5rem 1rem}
+.top-bar{display:flex;align-items:center;gap:10px;margin-bottom:1.25rem;flex-wrap:wrap}
+.top-bar h1{font-size:19px;font-weight:700;flex:1}
+.timer-badge{font-size:11px;font-weight:600;color:#0F6E56;background:#E1F5EE;padding:3px 10px;border-radius:99px}
+.setting-card{background:#fff;border:1px solid #e5e5e0;border-radius:14px;padding:1rem 1.25rem;margin-bottom:1rem}
+.sec-label{font-size:11px;font-weight:700;color:#999;letter-spacing:.06em;margin-bottom:8px}
+.ticker-row{display:flex;gap:8px;margin-bottom:10px}
+input[type=text]{flex:1;font-size:13px;padding:8px 12px;border:1px solid #ddd;border-radius:8px;background:#fff;color:#1a1a1a;outline:none}
+input[type=text]:focus{border-color:#aaa}
+.btn{padding:8px 18px;border:1px solid #ccc;border-radius:8px;background:#fff;color:#1a1a1a;font-size:13px;font-weight:600;cursor:pointer}
+.btn:hover{background:#f0f0ec}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn-dark{background:#1a1a1a;color:#fff;border-color:#1a1a1a}
+.btn-dark:hover{background:#333;color:#fff}
+.btn-red{color:#c0392b;border-color:#e5bebe}
+.watchlist{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+.chip{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border:1px solid #e0e0da;border-radius:99px;font-size:12px;color:#555;background:#f8f8f4}
+.chip-x{cursor:pointer;color:#bbb;font-size:15px;line-height:1}
+.chip-x:hover{color:#c0392b}
+.divider{height:1px;background:#f0f0ea;margin:12px 0}
+.controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.timer-row{display:flex;align-items:center;gap:8px;font-size:12px;color:#888}
+select{font-size:12px;padding:5px 9px;border:1px solid #ddd;border-radius:8px;background:#fff;color:#1a1a1a;outline:none}
+
+.filter-row{display:flex;gap:6px;margin-bottom:1rem;flex-wrap:wrap}
+.filter-btn{padding:5px 14px;border:1px solid #ddd;border-radius:99px;font-size:12px;font-weight:600;cursor:pointer;background:#fff;color:#666}
+.filter-btn.active{background:#1a1a1a;color:#fff;border-color:#1a1a1a}
+
+.summary-bar{display:flex;gap:8px;margin-bottom:1rem;flex-wrap:wrap}
+.sum-card{flex:1;min-width:70px;background:#fff;border-radius:10px;padding:10px 12px;border:1px solid #e5e5e0;text-align:center}
+.sum-label{font-size:11px;color:#aaa;margin-bottom:4px}
+.sum-val{font-size:20px;font-weight:700}
+
+.results{display:flex;flex-direction:column;gap:16px}
+
+/* 종목 카드 */
+.stock-card{background:#fff;border-radius:16px;border:2px solid #e5e5e0;overflow:hidden}
+
+/* 카드 헤더 */
+.card-header{display:flex;justify-content:space-between;align-items:center;padding:14px 18px 12px}
+.tkr{font-size:18px;font-weight:700}
+.tkr-sub{font-size:11px;color:#bbb;margin-top:2px}
+.price-wrap{text-align:right}
+.price{font-size:18px;font-weight:700}
+.chg{font-size:13px;margin-top:2px;font-weight:600}
+.pos{color:#0F6E56}.neg{color:#c0392b}
+
+/* 3단계 판정 바 */
+.periods-bar{display:flex;gap:0;margin:0 18px 14px;border-radius:12px;overflow:hidden;border:1px solid #eee}
+.period-block{flex:1;padding:10px 8px;text-align:center;position:relative}
+.period-block:not(:last-child){border-right:1px solid #eee}
+.period-label{font-size:10px;font-weight:700;color:#aaa;letter-spacing:.04em;margin-bottom:4px}
+.period-verdict{font-size:13px;font-weight:700;margin-bottom:2px}
+.period-score{font-size:10px;color:#aaa}
+.period-block.buy{background:#f0faf5}
+.period-block.sell{background:#fef0f0}
+.period-block.wait{background:#fdf8ed}
+.period-block.loading{background:#fafaf8}
+
+/* 종합 판정 */
+.overall-banner{display:flex;align-items:center;gap:12px;margin:0 18px 14px;padding:12px 16px;border-radius:12px}
+.overall-banner.buy{background:#edfaf3}
+.overall-banner.sell{background:#fef0f0}
+.overall-banner.wait{background:#fdf8ed}
+.overall-icon{font-size:30px;line-height:1}
+.overall-label{font-size:17px;font-weight:700}
+.overall-sub{font-size:12px;color:#777;margin-top:2px;line-height:1.5}
+
+/* 지표 상세 (접기/펼치기) */
+.detail-toggle{margin:0 18px 10px;padding:8px 0;font-size:12px;color:#aaa;cursor:pointer;display:flex;align-items:center;gap:4px;border-top:1px solid #f0f0ea;user-select:none}
+.detail-toggle:hover{color:#888}
+.detail-section{padding:0 18px 14px;display:none}
+.detail-section.open{display:block}
+
+.period-detail{margin-bottom:14px}
+.period-detail-title{font-size:11px;font-weight:700;color:#bbb;letter-spacing:.05em;margin-bottom:8px;display:flex;align-items:center;gap:6px}
+.period-detail-title span{font-size:13px}
+
+.ind-row{display:flex;align-items:flex-start;gap:10px;padding:7px 0;border-bottom:1px solid #f8f8f5}
+.ind-row:last-child{border-bottom:none}
+.ind-icon{font-size:16px;width:22px;text-align:center;flex-shrink:0;margin-top:1px}
+.ind-name{font-size:12px;font-weight:700;color:#555;margin-bottom:2px}
+.ind-val{font-size:12px;color:#888;margin-bottom:2px}
+.ind-desc{font-size:12px;color:#999;line-height:1.5}
+.ind-badge{display:inline-block;font-size:10px;font-weight:600;padding:2px 7px;border-radius:99px;margin-bottom:2px}
+.ib-good{background:#E1F5EE;color:#085041}
+.ib-bad{background:#FAECE7;color:#712B13}
+.ib-neu{background:#f0f0ec;color:#777}
+
+.conclusion{margin:0 18px 14px;padding:10px 14px;border-radius:10px;font-size:13px;line-height:1.6;color:#444}
+.conclusion.buy{background:#edfaf3;border-left:3px solid #1D9E75}
+.conclusion.sell{background:#fef0f0;border-left:3px solid #E24B4A}
+.conclusion.wait{background:#fdf8ed;border-left:3px solid #EF9F27}
+
+.loading-row{text-align:center;padding:2.5rem;font-size:14px;color:#aaa}
+.last-scan{font-size:11px;color:#bbb;margin-bottom:10px}
+.err-card{background:#fff;border:2px solid #f0bebe;border-radius:16px;padding:1rem 1.25rem}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top-bar">
+    <h1>📈 주식 매매 신호</h1>
+    <span id="timerBadge" style="display:none" class="timer-badge"></span>
+  </div>
+
+  <div class="setting-card">
+    <div class="sec-label">관심 종목</div>
+    <div class="ticker-row">
+      <input type="text" id="tickerInput" placeholder="티커 추가 (예: TSLA, NVDA)" />
+      <button class="btn" onclick="addTicker()">추가</button>
+    </div>
+    <div class="watchlist" id="watchlist"></div>
+    <div class="divider"></div>
+    <div class="controls">
+      <button class="btn btn-dark" id="scanBtn" onclick="startScan()">🔍 분석 시작</button>
+      <div class="timer-row">
+        <label>자동 갱신</label>
+        <select id="timerSel">
+          <option value="0">사용 안 함</option>
+          <option value="60">1분</option>
+          <option value="180">3분</option>
+          <option value="300">5분</option>
+          <option value="600">10분</option>
+        </select>
+        <button class="btn btn-red" id="stopBtn" style="display:none" onclick="stopTimer()">중지</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="filterRow" class="filter-row" style="display:none">
+    <button class="filter-btn active" onclick="setFilter('all',this)">전체</button>
+    <button class="filter-btn" onclick="setFilter('buy',this)">🟢 사기 좋아요</button>
+    <button class="filter-btn" onclick="setFilter('wait',this)">🟡 기다려요</button>
+    <button class="filter-btn" onclick="setFilter('sell',this)">🔴 팔 타이밍</button>
+  </div>
+
+  <div id="summaryBar" class="summary-bar" style="display:none">
+    <div class="sum-card"><div class="sum-label">전체</div><div class="sum-val" id="sumTotal" style="color:#1a1a1a">0</div></div>
+    <div class="sum-card"><div class="sum-label">🟢 사기좋아요</div><div class="sum-val" id="sumBuy" style="color:#0F6E56">0</div></div>
+    <div class="sum-card"><div class="sum-label">🟡 기다려요</div><div class="sum-val" id="sumWait" style="color:#BA7517">0</div></div>
+    <div class="sum-card"><div class="sum-label">🔴 팔타이밍</div><div class="sum-val" id="sumSell" style="color:#993C1D">0</div></div>
+  </div>
+
+  <div id="lastScan" class="last-scan" style="display:none"></div>
+  <div class="results" id="results"></div>
+</div>
+
+<script>
+const FINNHUB_KEY = 'd6smkbhr01qtlmfoidqgd6smkbhr01qtlmfoidr0';
+const DEFAULT_TICKERS = ['TSLA','TSLL','TSYY','NVDA','AAPL','SOXL','MSFT','AMD'];
+let tickers = [...DEFAULT_TICKERS];
+let scanResults = [];
+let autoTimer = null, countdown = 0, countdownInterval = null;
+let activeFilter = 'all';
+
+// 기간 설정
+const PERIODS = [
+  { key: 'short',  label: '단기',  sub: '3개월 일봉', range: '3mo',  interval: '1d',  minLen: 20 },
+  { key: 'mid',    label: '중기',  sub: '6개월 주봉', range: '6mo',  interval: '1wk', minLen: 10 },
+  { key: 'long',   label: '장기',  sub: '1년 주봉',   range: '1y',   interval: '1wk', minLen: 20 },
+];
+
+function renderWatchlist() {
+  document.getElementById('watchlist').innerHTML = tickers.map((t,i)=>
+    `<div class="chip">${t}<span class="chip-x" onclick="removeTicker(${i})">×</span></div>`
+  ).join('');
+}
+function addTicker() {
+  const inp = document.getElementById('tickerInput');
+  const v = inp.value.trim().toUpperCase();
+  if (v && !tickers.includes(v)) tickers.push(v);
+  inp.value = ''; renderWatchlist();
+}
+function removeTicker(i) { tickers.splice(i,1); renderWatchlist(); }
+document.getElementById('tickerInput').addEventListener('keydown', e=>{ if(e.key==='Enter') addTicker(); });
+function setFilter(f, el) {
+  activeFilter = f;
+  document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));
+  el.classList.add('active');
+  renderResults();
+}
+
+// ── API ──────────────────────────────────────────
+async function fetchQuote(ticker) {
+  const r = await fetch(`https://finnhub.io/api/v1/quote?symbol=${ticker}&token=${FINNHUB_KEY}`,
+    { signal: AbortSignal.timeout(6000) });
+  const d = await r.json();
+  if (!d.c || d.c === 0) throw new Error('시세 없음');
+  return { price: d.c, change: parseFloat(((d.c-d.pc)/d.pc*100).toFixed(2)) };
+}
+
+async function fetchCandle(ticker, range, interval) {
+  const r = await fetch(`/api/quote?ticker=${encodeURIComponent(ticker)}&range=${range}&interval=${interval}`,
+    { signal: AbortSignal.timeout(12000) });
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  const data = await r.json();
+  const result = data?.chart?.result?.[0];
+  if (!result) throw new Error('결과 없음');
+  const q = result.indicators.quote[0];
+  const closes = (q.close||[]).filter(v=>v!=null);
+  const volumes = (q.volume||[]).filter(v=>v!=null);
+  return { closes, volumes };
+}
+
+// ── 지표 계산 ──────────────────────────────────────
+function calcRSI(c, p=14) {
+  if (!c||c.length<p+1) return null;
+  let g=0,l=0;
+  for(let i=c.length-p;i<c.length;i++){const d=c[i]-c[i-1];if(d>0)g+=d;else l+=Math.abs(d);}
+  return parseFloat((100-100/(1+(g/p)/((l/p)||0.0001))).toFixed(1));
+}
+function calcBoll(c, p=20) {
+  if (!c||c.length<p) return null;
+  const s=c.slice(-p),m=s.reduce((a,b)=>a+b,0)/p;
+  const std=Math.sqrt(s.reduce((a,b)=>a+(b-m)**2,0)/p);
+  const last=c[c.length-1],u=m+2*std,l=m-2*std;
+  if(u===l) return null;
+  const pct=(last-l)/(u-l);
+  return {pct:parseFloat((pct*100).toFixed(1)),upper:parseFloat(u.toFixed(2)),lower:parseFloat(l.toFixed(2)),pos:pct<0.2?'lower':pct>0.8?'upper':'mid'};
+}
+function calcSMA(c,p){if(!c||c.length<p)return null;return c.slice(-p).reduce((a,b)=>a+b,0)/p;}
+function calcCross(c, short=5, long=20) {
+  if(!c||c.length<long+2)return null;
+  const s5n=calcSMA(c,short),s20n=calcSMA(c,long);
+  const s5p=calcSMA(c.slice(0,-1),short),s20p=calcSMA(c.slice(0,-1),long);
+  if(!s5n||!s20n||!s5p||!s20p)return null;
+  if(s5p<=s20p&&s5n>s20n)return 'golden';
+  if(s5p>=s20p&&s5n<s20n)return 'dead';
+  return s5n>s20n?'above':'below';
+}
+function calcMACD(c) {
+  if(!c||c.length<26)return null;
+  const ema=(a,p)=>{const k=2/(p+1);let e=a[0];for(let i=1;i<a.length;i++)e=a[i]*k+e*(1-k);return e;};
+  return parseFloat((ema(c,12)-ema(c,26)).toFixed(4));
+}
+function calcVol(v) {
+  if(!v||v.length<6)return null;
+  const avg=v.slice(-6,-1).reduce((a,b)=>a+(b||0),0)/5;
+  return parseFloat(((v[v.length-1]||0)/(avg||1)).toFixed(2));
+}
+
+// ── 기간별 분석 ──────────────────────────────────
+function analyzePeriod(candle, periodKey) {
+  if (!candle) return { score: 50, items: [], verdict: 'wait', hasData: false };
+  const c = candle.closes, v = candle.volumes;
+  const items = [];
+  let score = 0;
+  // 주봉(중기·장기)은 크로스 파라미터 다르게, 크로스 점수 비중 낮춤
+  const isWeekly = periodKey === 'mid' || periodKey === 'long';
+  const crossShort = isWeekly ? 4 : 5;
+  const crossLong  = isWeekly ? 10 : 20;
+  const crossBig   = isWeekly ? 15 : 25; // 골든/데드 점수
+  const crossSmall = isWeekly ? 7  : 10; // 위/아래 점수
+
+  // RSI — 주봉에서 신호가 더 강하므로 점수 높임
+  const rsi = calcRSI(c);
+  if (rsi !== null) {
+    let badge,bc,desc;
+    if(rsi<30){
+      score += isWeekly ? 35 : 25;
+      badge='매수 신호';bc='ib-good';
+      desc=`RSI ${rsi} — 과매도 구간. ${isWeekly?'주봉 기준으로 매우 강한 반등 신호!':'단기 반등 가능성 높음'}`;
+    } else if(rsi<40){
+      score += isWeekly ? 20 : 15;
+      badge='약한 매수';bc='ib-good';
+      desc=`RSI ${rsi} — 저평가 구간. 진입 고려해볼 만해요.`;
+    } else if(rsi<50){
+      score += 8;
+      badge='중립 하단';bc='ib-neu';
+      desc=`RSI ${rsi} — 중립이지만 살짝 낮은 편이에요.`;
+    } else if(rsi>75){
+      score -= isWeekly ? 25 : 20;
+      badge='매도 신호';bc='ib-bad';
+      desc=`RSI ${rsi} — 과매수. 조정 위험이 있어요.`;
+    } else if(rsi>60){
+      score -= 5;
+      badge='살짝 과열';bc='ib-neu';
+      desc=`RSI ${rsi} — 다소 높은 수준이에요.`;
+    } else {
+      badge='중립';bc='ib-neu';
+      desc=`RSI ${rsi} — 보통 상태예요.`;
+    }
+    items.push({icon:'📊',name:'RSI',val:`${rsi}`,badge,bc,desc});
+  }
+
+  // 볼린저밴드
+  const boll = calcBoll(c);
+  if (boll) {
+    let badge,bc,desc;
+    if(boll.pos==='lower'){score+=20;badge='매수 신호';bc='ib-good';desc=`볼밴 하단 (${boll.pct}%) — 바닥 근처`;}
+    else if(boll.pos==='upper'){score-=15;badge='매도 신호';bc='ib-bad';desc=`볼밴 상단 (${boll.pct}%) — 천장 근처`;}
+    else{badge='중립';bc='ib-neu';desc=`볼밴 중간 (${boll.pct}%)`;}
+    items.push({icon:'📏',name:'볼린저밴드',val:`하단 $${boll.lower} / 상단 $${boll.upper}`,badge,bc,desc});
+  }
+
+  // 골든/데드크로스 (기간별 파라미터)
+  const cross = calcCross(c, crossShort, crossLong);
+  if (cross) {
+    let badge,bc,desc,val;
+    const crossLabel = isWeekly ? `${crossShort}주선 vs ${crossLong}주선` : `${crossShort}일선 vs ${crossLong}일선`;
+    if(cross==='golden'){score+=crossBig;badge='골든크로스🎯';bc='ib-good';val='골든크로스!';desc=`${crossLabel} — 강한 상승 전환 신호`;}
+    else if(cross==='dead'){score-=crossBig;badge='데드크로스💀';bc='ib-bad';val='데드크로스!';desc=`${crossLabel} — 강한 하락 전환 신호`;}
+    else if(cross==='above'){score+=crossSmall;badge='상승 흐름';bc='ib-good';val=`단기선 > 장기선`;desc=`${crossLabel} — 상승 추세 유지 중`;}
+    else{score-=crossSmall;badge='하락 흐름';bc='ib-bad';val=`단기선 < 장기선`;desc=`${crossLabel} — 하락 추세 진행 중`;}
+    items.push({icon:'✂️',name:'골든/데드크로스',val,badge,bc,desc});
+  }
+
+  // MACD
+  const macd = calcMACD(c);
+  if (macd !== null) {
+    let badge,bc,desc;
+    if(macd>0){score+=10;badge='상승 에너지';bc='ib-good';desc='상승 힘이 더 강함';}
+    else{score-=8;badge='하락 에너지';bc='ib-bad';desc='하락 힘이 더 강함';}
+    items.push({icon:'⚡',name:'MACD',val:macd.toFixed(4),badge,bc,desc});
+  }
+
+  // 거래량
+  const vol = calcVol(v);
+  if (vol !== null) {
+    let badge,bc,desc;
+    if(vol>2){score+=12;badge='거래량 급등';bc='ib-good';desc=`평균 ${vol}배 거래`;}
+    else if(vol>1.5){score+=5;badge='거래량 증가';bc='ib-neu';desc=`평균 ${vol}배 거래`;}
+    else{badge='거래량 평이';bc='ib-neu';desc=`평균 ${vol}배`;}
+    items.push({icon:'📦',name:'거래량',val:`평균 대비 ${vol}배`,badge,bc,desc});
+  }
+
+  const finalScore = Math.max(0, Math.min(100, score + 30));
+  const verdict = finalScore >= 62 ? 'buy' : finalScore <= 38 ? 'sell' : 'wait';
+  return { score: finalScore, items, verdict, hasData: items.length >= 2 };
+}
+
+// ── 종합 판정 ─────────────────────────────────────
+function overallVerdict(periods) {
+  const weights = { short: 1, mid: 1.5, long: 2 }; // 장기일수록 가중치 높음
+  let totalWeight = 0, weightedScore = 0;
+  for (const [key, p] of Object.entries(periods)) {
+    if (p.hasData) {
+      const w = weights[key] || 1;
+      weightedScore += p.score * w;
+      totalWeight += w;
+    }
+  }
+  if (totalWeight === 0) return { verdict: 'wait', score: 50 };
+  const score = Math.round(weightedScore / totalWeight);
+  return { verdict: score >= 62 ? 'buy' : score <= 38 ? 'sell' : 'wait', score };
+}
+
+function verdictText(v) {
+  return v === 'buy' ? '지금 사기 좋아요 🟢' : v === 'sell' ? '팔 타이밍이에요 🔴' : '좀 더 기다려요 🟡';
+}
+function verdictEmoji(v) {
+  return v === 'buy' ? '🟢' : v === 'sell' ? '🔴' : '🟡';
+}
+
+function buildOverallDesc(periods, overall) {
+  const short = periods.short, mid = periods.mid, long = periods.long;
+  const parts = [];
+
+  if (long.hasData) {
+    if (long.verdict === 'buy') parts.push('장기적으로는 매수 관점');
+    else if (long.verdict === 'sell') parts.push('장기적으로는 하락 추세');
+    else parts.push('장기적으로는 관망 구간');
+  }
+  if (mid.hasData) {
+    if (mid.verdict === 'buy') parts.push('중기도 매수 우호적');
+    else if (mid.verdict === 'sell') parts.push('중기도 하락 압력');
+    else parts.push('중기는 횡보 중');
+  }
+  if (short.hasData) {
+    if (short.verdict === 'buy') parts.push('단기 매수 신호');
+    else if (short.verdict === 'sell') parts.push('단기 매도 신호');
+    else parts.push('단기는 관망');
+  }
+
+  if (overall.verdict === 'buy') {
+    return parts.join(', ') + ' — 전반적으로 매수 타이밍이에요. 분할 매수를 고려해보세요!';
+  } else if (overall.verdict === 'sell') {
+    return parts.join(', ') + ' — 전반적으로 매도 신호예요. 보유 중이라면 정리를 고려해보세요.';
+  }
+  return parts.join(', ') + ' — 신호가 엇갈려요. 좀 더 지켜보는 게 안전해요.';
+}
+
+// ── 렌더링 ────────────────────────────────────────
+function renderResults() {
+  let data = [...scanResults].filter(d=>!d.error);
+  if (activeFilter==='buy') data=data.filter(d=>d.overall?.verdict==='buy');
+  else if (activeFilter==='wait') data=data.filter(d=>d.overall?.verdict==='wait');
+  else if (activeFilter==='sell') data=data.filter(d=>d.overall?.verdict==='sell');
+  data.sort((a,b)=>(b.overall?.score||0)-(a.overall?.score||0));
+
+  const all = scanResults.filter(d=>!d.error);
+  document.getElementById('sumTotal').textContent=all.length;
+  document.getElementById('sumBuy').textContent=all.filter(d=>d.overall?.verdict==='buy').length;
+  document.getElementById('sumWait').textContent=all.filter(d=>d.overall?.verdict==='wait').length;
+  document.getElementById('sumSell').textContent=all.filter(d=>d.overall?.verdict==='sell').length;
+  document.getElementById('summaryBar').style.display='flex';
+  document.getElementById('filterRow').style.display='flex';
+
+  const errors = scanResults.filter(d=>d.error);
+  const res = document.getElementById('results');
+
+  const cards = data.map(d => {
+    const ov = d.overall || { verdict:'wait', score:50 };
+    const pStr = d.price.toFixed(2);
+
+    // 3단계 바
+    const periodsBarHtml = PERIODS.map(p => {
+      const pd = d.periods?.[p.key];
+      if (!pd || !pd.hasData) {
+        return `<div class="period-block loading">
+          <div class="period-label">${p.label}</div>
+          <div class="period-verdict" style="color:#ccc">–</div>
+          <div class="period-score">${p.sub}</div>
+        </div>`;
+      }
+      const color = pd.verdict==='buy'?'#0F6E56':pd.verdict==='sell'?'#E24B4A':'#BA7517';
+      return `<div class="period-block ${pd.verdict}">
+        <div class="period-label">${p.label}</div>
+        <div class="period-verdict" style="color:${color}">${verdictEmoji(pd.verdict)} ${pd.verdict==='buy'?'매수':pd.verdict==='sell'?'매도':'관망'}</div>
+        <div class="period-score">${p.sub} · ${pd.score}점</div>
+      </div>`;
+    }).join('');
+
+    // 상세 지표 (기간별)
+    const detailHtml = PERIODS.map(p => {
+      const pd = d.periods?.[p.key];
+      if (!pd || !pd.hasData || pd.items.length === 0) return '';
+      const itemsHtml = pd.items.map(item=>`
+        <div class="ind-row">
+          <div class="ind-icon">${item.icon}</div>
+          <div>
+            <div class="ind-name">${item.name} <span class="ind-badge ${item.bc}">${item.badge}</span></div>
+            <div class="ind-val">${item.val}</div>
+            <div class="ind-desc">${item.desc}</div>
+          </div>
+        </div>`).join('');
+      return `<div class="period-detail">
+        <div class="period-detail-title"><span>${verdictEmoji(pd.verdict)}</span> ${p.label} (${p.sub})</div>
+        ${itemsHtml}
+      </div>`;
+    }).join('');
+
+    const uid = d.ticker.replace(/[^a-zA-Z0-9]/g,'_');
+
+    return `<div class="stock-card">
+      <div class="card-header">
+        <div><div class="tkr">${d.ticker}</div><div class="tkr-sub">미국 주식</div></div>
+        <div class="price-wrap">
+          <div class="price">$${pStr}</div>
+          <div class="chg ${d.change>=0?'pos':'neg'}">${d.change>=0?'+':''}${d.change}%</div>
+        </div>
+      </div>
+
+      <div class="periods-bar">${periodsBarHtml}</div>
+
+      <div class="overall-banner ${ov.verdict}">
+        <div class="overall-icon">${verdictEmoji(ov.verdict)}</div>
+        <div>
+          <div class="overall-label">${verdictText(ov.verdict)}</div>
+          <div class="overall-sub">${d.overallDesc || ''}</div>
+        </div>
+      </div>
+
+      <div class="conclusion ${ov.verdict}">${d.conclusionText || ''}</div>
+
+      <div class="detail-toggle" onclick="toggleDetail('${uid}')">
+        <span id="toggle-icon-${uid}">▶</span> 지표 상세 보기
+      </div>
+      <div class="detail-section" id="detail-${uid}">
+        ${detailHtml}
+      </div>
+    </div>`;
+  });
+
+  const errCards = errors.map(d=>`<div class="err-card">
+    <div style="font-size:15px;font-weight:700">${d.ticker}</div>
+    <div style="font-size:12px;color:#c0392b;margin-top:4px">${d.msg}</div>
+  </div>`);
+
+  res.innerHTML = [...cards,...errCards].join('') || '<div style="text-align:center;padding:2rem;color:#aaa">해당 조건의 종목이 없습니다.</div>';
+}
+
+function toggleDetail(uid) {
+  const section = document.getElementById(`detail-${uid}`);
+  const icon = document.getElementById(`toggle-icon-${uid}`);
+  if (section.classList.contains('open')) {
+    section.classList.remove('open');
+    icon.textContent = '▶';
+  } else {
+    section.classList.add('open');
+    icon.textContent = '▼';
+  }
+}
+
+async function processTicker(ticker) {
+  try {
+    const quoteRes = await fetchQuote(ticker);
+
+    // 3기간 병렬 요청
+    const candleResults = await Promise.allSettled(
+      PERIODS.map(p => fetchCandle(ticker, p.range, p.interval))
+    );
+
+    const periods = {};
+    PERIODS.forEach((p, i) => {
+      const candle = candleResults[i].status === 'fulfilled' ? candleResults[i].value : null;
+      periods[p.key] = analyzePeriod(candle, p.key);
+    });
+
+    const overall = overallVerdict(periods);
+    const overallDesc = buildOverallDesc(periods, overall);
+
+    const bads = [];
+    const goods = [];
+    for (const [key, pd] of Object.entries(periods)) {
+      const label = PERIODS.find(p=>p.key===key)?.label;
+      if (pd.verdict==='buy') goods.push(label);
+      if (pd.verdict==='sell') bads.push(label);
+    }
+
+    let conclusionText = '';
+    if (overall.verdict==='buy') conclusionText = `${goods.join('·')} 구간에서 매수 신호가 나오고 있어요. 관심 있었다면 분할 매수를 고려해보세요!`;
+    else if (overall.verdict==='sell') conclusionText = `${bads.join('·')} 구간에서 하락 신호가 나오고 있어요. 보유 중이라면 매도 타이밍을 고려해보세요.`;
+    else conclusionText = '단기·중기·장기 신호가 엇갈려요. 더 명확한 신호가 나올 때까지 기다리는 게 안전해요.';
+
+    scanResults.push({
+      ticker, price: quoteRes.price, change: quoteRes.change,
+      periods, overall, overallDesc, conclusionText
+    });
+  } catch(e) {
+    scanResults.push({ ticker, error: true, msg: `오류: ${e.message}` });
+  }
+}
+
+async function startScan() {
+  const btn = document.getElementById('scanBtn');
+  btn.disabled=true; btn.textContent='분석 중...';
+  scanResults=[];
+  document.getElementById('summaryBar').style.display='none';
+  document.getElementById('filterRow').style.display='none';
+  document.getElementById('results').innerHTML='<div class="loading-row">단기·중기·장기 지표 분석 중...</div>';
+
+  // 2개씩 병렬 (API 부하 줄이기)
+  for (let i=0; i<tickers.length; i+=2) {
+    await Promise.all(tickers.slice(i,i+2).map(t=>processTicker(t)));
+    renderResults();
+  }
+
+  const now=new Date();
+  const ls=document.getElementById('lastScan');
+  ls.style.display='block';
+  ls.textContent=`마지막 분석: ${now.toLocaleTimeString('ko-KR')}`;
+  btn.disabled=false; btn.textContent='🔍 다시 분석';
+  setupAutoTimer();
+}
+
+function setupAutoTimer() {
+  const sec=parseInt(document.getElementById('timerSel').value);
+  if(autoTimer){clearInterval(autoTimer);autoTimer=null;}
+  if(countdownInterval){clearInterval(countdownInterval);countdownInterval=null;}
+  if(sec===0){document.getElementById('stopBtn').style.display='none';document.getElementById('timerBadge').style.display='none';return;}
+  countdown=sec;
+  document.getElementById('stopBtn').style.display='';
+  updateTimerBadge();
+  countdownInterval=setInterval(()=>{countdown--;updateTimerBadge();if(countdown<=0)countdown=sec;},1000);
+  autoTimer=setInterval(()=>startScan(),sec*1000);
+}
+function updateTimerBadge() {
+  const b=document.getElementById('timerBadge');
+  b.style.display='';
+  const m=Math.floor(countdown/60),s=countdown%60;
+  b.textContent=`다음 분석 ${m>0?m+'분 ':''}${s}초 후`;
+}
+function stopTimer() {
+  if(autoTimer){clearInterval(autoTimer);autoTimer=null;}
+  if(countdownInterval){clearInterval(countdownInterval);countdownInterval=null;}
+  document.getElementById('stopBtn').style.display='none';
+  document.getElementById('timerBadge').style.display='none';
+  document.getElementById('timerSel').value='0';
+}
+
+renderWatchlist();
+</script>
+</body>
+</html>
