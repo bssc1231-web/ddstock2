@@ -102,6 +102,24 @@ select{font-size:12px;padding:5px 9px;border:1px solid #ddd;border-radius:8px;ba
 .conclusion.wait{background:#fdf8ed;border-left:3px solid #EF9F27}
 
 .loading-row{text-align:center;padding:2.5rem;font-size:14px;color:#aaa}
+.ai-analysis{margin:0 18px 14px;border-radius:12px;overflow:hidden;border:1px solid #e5e5e0}
+.ai-analysis-header{display:flex;align-items:center;gap:8px;padding:10px 14px;background:#f8f8f4;border-bottom:1px solid #e5e5e0}
+.ai-analysis-title{font-size:12px;font-weight:700;color:#555;flex:1}
+.ai-sentiment{font-size:11px;font-weight:600;padding:2px 8px;border-radius:99px}
+.ai-sentiment.pos{background:#E1F5EE;color:#085041}
+.ai-sentiment.neg{background:#FAECE7;color:#712B13}
+.ai-sentiment.neu{background:#f0f0ec;color:#666}
+.ai-verdict-row{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid #f0f0ea}
+.ai-verdict-icon{font-size:26px;line-height:1}
+.ai-verdict-label{font-size:16px;font-weight:700}
+.ai-verdict-sub{font-size:11px;color:#aaa;margin-top:2px}
+.ai-body{padding:10px 14px}
+.ai-summary{font-size:13px;color:#444;line-height:1.65;margin-bottom:8px}
+.ai-news{display:flex;flex-direction:column;gap:4px}
+.ai-news-item{font-size:11px;color:#888;padding:4px 0;border-bottom:1px solid #f5f5f2;line-height:1.4}
+.ai-news-item:last-child{border-bottom:none}
+.ai-loading{padding:14px;font-size:12px;color:#aaa;text-align:center}
+.ai-error{padding:10px 14px;font-size:12px;color:#c0392b}
 .last-scan{font-size:11px;color:#bbb;margin-bottom:10px}
 .err-card{background:#fff;border:2px solid #f0bebe;border-radius:16px;padding:1rem 1.25rem}
 </style>
@@ -165,9 +183,9 @@ let activeFilter = 'all';
 
 // 기간 설정
 const PERIODS = [
-  { key: 'short',  label: '단기',  sub: '3개월 일봉', range: '3mo',  interval: '1d',  minLen: 20 },
-  { key: 'mid',    label: '중기',  sub: '6개월 주봉', range: '6mo',  interval: '1wk', minLen: 10 },
-  { key: 'long',   label: '장기',  sub: '1년 주봉',   range: '1y',   interval: '1wk', minLen: 20 },
+  { key: 'short',  label: '단기',  sub: '3개월 일봉', range: '6mo',  interval: '1d',  minLen: 20, displayRange: 63  },
+  { key: 'mid',    label: '중기',  sub: '6개월 주봉', range: '1y',   interval: '1wk', minLen: 10, displayRange: 26  },
+  { key: 'long',   label: '장기',  sub: '1년 주봉',   range: '2y',   interval: '1wk', minLen: 20, displayRange: 52  },
 ];
 
 function renderWatchlist() {
@@ -214,15 +232,35 @@ async function fetchCandle(ticker, range, interval) {
 
 // ── 지표 계산 ──────────────────────────────────────
 function calcRSI(c, p=14) {
-  if (!c||c.length<p+1) return null;
-  let g=0,l=0;
-  for(let i=c.length-p;i<c.length;i++){const d=c[i]-c[i-1];if(d>0)g+=d;else l+=Math.abs(d);}
-  return parseFloat((100-100/(1+(g/p)/((l/p)||0.0001))).toFixed(1));
+  // Wilder EMA RSI (업계 표준 - TradingView, TipRanks 동일 방식)
+  if (!c || c.length < p * 2) return null;
+  // 1단계: 첫 p개로 초기 평균 계산
+  let avgGain = 0, avgLoss = 0;
+  for (let i = 1; i <= p; i++) {
+    const d = c[i] - c[i-1];
+    if (d > 0) avgGain += d; else avgLoss += Math.abs(d);
+  }
+  avgGain /= p;
+  avgLoss /= p;
+  // 2단계: 이후 데이터로 Wilder EMA 적용
+  for (let i = p + 1; i < c.length; i++) {
+    const d = c[i] - c[i-1];
+    const gain = d > 0 ? d : 0;
+    const loss = d < 0 ? Math.abs(d) : 0;
+    avgGain = (avgGain * (p - 1) + gain) / p;
+    avgLoss = (avgLoss * (p - 1) + loss) / p;
+  }
+  if (avgLoss === 0) return 100;
+  const rs = avgGain / avgLoss;
+  return parseFloat((100 - 100 / (1 + rs)).toFixed(1));
 }
 function calcBoll(c, p=20) {
   if (!c||c.length<p) return null;
-  const s=c.slice(-p),m=s.reduce((a,b)=>a+b,0)/p;
-  const std=Math.sqrt(s.reduce((a,b)=>a+(b-m)**2,0)/p);
+  // 실제 데이터 수에 맞게 period 조정 (너무 길면 데이터 길이의 절반으로)
+  const actualP = Math.min(p, Math.floor(c.length * 0.7));
+  if (actualP < 5) return null;
+  const s=c.slice(-actualP),m=s.reduce((a,b)=>a+b,0)/actualP;
+  const std=Math.sqrt(s.reduce((a,b)=>a+(b-m)**2,0)/actualP);
   const last=c[c.length-1],u=m+2*std,l=m-2*std;
   if(u===l) return null;
   const pct=(last-l)/(u-l);
@@ -238,10 +276,10 @@ function calcCross(c, short=5, long=20) {
   if(s5p>=s20p&&s5n<s20n)return 'dead';
   return s5n>s20n?'above':'below';
 }
-function calcMACD(c) {
-  if(!c||c.length<26)return null;
+function calcMACD(c, fast=12, slow=26) {
+  if(!c||c.length<slow) return null;
   const ema=(a,p)=>{const k=2/(p+1);let e=a[0];for(let i=1;i<a.length;i++)e=a[i]*k+e*(1-k);return e;};
-  return parseFloat((ema(c,12)-ema(c,26)).toFixed(4));
+  return parseFloat((ema(c,fast)-ema(c,slow)).toFixed(4));
 }
 function calcVol(v) {
   if(!v||v.length<6)return null;
@@ -252,53 +290,59 @@ function calcVol(v) {
 // ── 기간별 분석 ──────────────────────────────────
 function analyzePeriod(candle, periodKey) {
   if (!candle) return { score: 50, items: [], verdict: 'wait', hasData: false };
-  const c = candle.closes, v = candle.volumes;
-  const items = [];
-  let score = 0;
-  // 주봉(중기·장기)은 크로스 파라미터 다르게, 크로스 점수 비중 낮춤
+  const allCloses = candle.closes;
+  const allVolumes = candle.volumes;
   const isWeekly = periodKey === 'mid' || periodKey === 'long';
   const crossShort = isWeekly ? 4 : 5;
   const crossLong  = isWeekly ? 10 : 20;
-  const crossBig   = isWeekly ? 15 : 25; // 골든/데드 점수
-  const crossSmall = isWeekly ? 7  : 10; // 위/아래 점수
-
-  // RSI — 주봉에서 신호가 더 강하므로 점수 높임
-  const rsi = calcRSI(c);
+  const crossBig   = isWeekly ? 15 : 25;
+  const crossSmall = isWeekly ? 9  : 14;
+  const bollPeriod = periodKey === 'short' ? 20 : periodKey === 'mid' ? 12 : 20;
+  const rsi = calcRSI(allCloses);
+  const macdRaw = calcMACD(allCloses, isWeekly ? 6 : 12, isWeekly ? 13 : 26);
+  const period = PERIODS.find(p => p.key === periodKey);
+  const displayN = period?.displayRange || allCloses.length;
+  const c = allCloses.slice(-displayN);
+  const v = allVolumes.slice(-displayN);
+  const items = [];
+  let score = 0;
+  // RSI
   if (rsi !== null) {
     let badge,bc,desc;
     if(rsi<30){
-      score += isWeekly ? 35 : 25;
+      score += isWeekly ? 35 : 28;
       badge='매수 신호';bc='ib-good';
       desc=`RSI ${rsi} — 과매도 구간. ${isWeekly?'주봉 기준으로 매우 강한 반등 신호!':'단기 반등 가능성 높음'}`;
     } else if(rsi<40){
-      score += isWeekly ? 20 : 15;
+      score += isWeekly ? 22 : 18;
       badge='약한 매수';bc='ib-good';
       desc=`RSI ${rsi} — 저평가 구간. 진입 고려해볼 만해요.`;
     } else if(rsi<50){
-      score += 8;
+      score += 10;
       badge='중립 하단';bc='ib-neu';
       desc=`RSI ${rsi} — 중립이지만 살짝 낮은 편이에요.`;
-    } else if(rsi>75){
-      score -= isWeekly ? 25 : 20;
-      badge='매도 신호';bc='ib-bad';
-      desc=`RSI ${rsi} — 과매수. 조정 위험이 있어요.`;
-    } else if(rsi>60){
-      score -= 5;
-      badge='살짝 과열';bc='ib-neu';
-      desc=`RSI ${rsi} — 다소 높은 수준이에요.`;
-    } else {
+    } else if(rsi<=60){
+      score += 3;
       badge='중립';bc='ib-neu';
       desc=`RSI ${rsi} — 보통 상태예요.`;
+    } else if(rsi<=75){
+      score += 0;
+      badge='중립 상단';bc='ib-neu';
+      desc=`RSI ${rsi} — 살짝 높지만 강한 추세에선 정상 범위예요.`;
+    } else {
+      score -= isWeekly ? 20 : 15;
+      badge='과매수 주의';bc='ib-bad';
+      desc=`RSI ${rsi} — 과매수 구간. 단기 조정 가능성이 있어요.`;
     }
     items.push({icon:'📊',name:'RSI',val:`${rsi}`,badge,bc,desc});
   }
 
   // 볼린저밴드
-  const boll = calcBoll(c);
+  const boll = calcBoll(c, bollPeriod);
   if (boll) {
     let badge,bc,desc;
-    if(boll.pos==='lower'){score+=20;badge='매수 신호';bc='ib-good';desc=`볼밴 하단 (${boll.pct}%) — 바닥 근처`;}
-    else if(boll.pos==='upper'){score-=15;badge='매도 신호';bc='ib-bad';desc=`볼밴 상단 (${boll.pct}%) — 천장 근처`;}
+    if(boll.pos==='lower'){score+=18;badge='매수 신호';bc='ib-good';desc=`볼밴 하단 (${boll.pct}%) — 바닥 근처, 반등 가능성`;}
+    else if(boll.pos==='upper'){score-=8;badge='상단 근접';bc='ib-neu';desc=`볼밴 상단 (${boll.pct}%) — 천장 근처지만 강한 추세는 유지될 수 있어요`;}
     else{badge='중립';bc='ib-neu';desc=`볼밴 중간 (${boll.pct}%)`;}
     items.push({icon:'📏',name:'볼린저밴드',val:`하단 $${boll.lower} / 상단 $${boll.upper}`,badge,bc,desc});
   }
@@ -316,12 +360,21 @@ function analyzePeriod(candle, periodKey) {
   }
 
   // MACD
-  const macd = calcMACD(c);
+  const macd = macdRaw;
   if (macd !== null) {
     let badge,bc,desc;
-    if(macd>0){score+=10;badge='상승 에너지';bc='ib-good';desc='상승 힘이 더 강함';}
-    else{score-=8;badge='하락 에너지';bc='ib-bad';desc='하락 힘이 더 강함';}
+    if(macd>0){score+=12;badge='상승 에너지';bc='ib-good';desc='상승 힘이 더 강함';}
+    else{score-=10;badge='하락 에너지';bc='ib-bad';desc='하락 힘이 더 강함';}
     items.push({icon:'⚡',name:'MACD',val:macd.toFixed(4),badge,bc,desc});
+  }
+
+  // 시너지 보너스: RSI>50 + MACD양수 + 크로스상승 동시 → 강한 추세 신호 +10
+  if (rsi !== null && rsi > 50 && macd !== null && macd > 0 && (cross === 'above' || cross === 'golden')) {
+    score += 10;
+  }
+  // 역시너지: RSI<50 + MACD음수 + 크로스하락 동시 → 강한 하락 추세 -10
+  if (rsi !== null && rsi < 50 && macd !== null && macd < 0 && (cross === 'below' || cross === 'dead')) {
+    score -= 10;
   }
 
   // 거래량
@@ -334,7 +387,7 @@ function analyzePeriod(candle, periodKey) {
     items.push({icon:'📦',name:'거래량',val:`평균 대비 ${vol}배`,badge,bc,desc});
   }
 
-  const finalScore = Math.max(0, Math.min(100, score + 30));
+  const finalScore = Math.max(0, Math.min(100, score + 35));
   const verdict = finalScore >= 62 ? 'buy' : finalScore <= 38 ? 'sell' : 'wait';
   return { score: finalScore, items, verdict, hasData: items.length >= 2 };
 }
@@ -473,6 +526,35 @@ function renderResults() {
 
       <div class="conclusion ${ov.verdict}">${d.conclusionText || ''}</div>
 
+      <div class="ai-analysis" id="ai-box-${uid}">
+        ${d.aiLoading ? '<div class="ai-loading">🤖 AI가 뉴스와 지표를 종합 분석 중...</div>' :
+          d.aiAnalysis ? `
+          <div class="ai-analysis-header">
+            <div class="ai-analysis-title">🤖 AI 종합 분석 (기술 + 뉴스)</div>
+            <span class="ai-sentiment ${d.aiAnalysis.news_sentiment === 'positive' ? 'pos' : d.aiAnalysis.news_sentiment === 'negative' ? 'neg' : 'neu'}">
+              뉴스 ${d.aiAnalysis.news_sentiment === 'positive' ? '긍정' : d.aiAnalysis.news_sentiment === 'negative' ? '부정' : '중립'}
+            </span>
+          </div>
+          <div class="ai-verdict-row">
+            <div class="ai-verdict-icon">${d.aiAnalysis.verdict === 'buy' ? '🟢' : d.aiAnalysis.verdict === 'sell' ? '🔴' : '🟡'}</div>
+            <div>
+              <div class="ai-verdict-label">${d.aiAnalysis.verdict === 'buy' ? 'AI: 지금 사기 좋아요' : d.aiAnalysis.verdict === 'sell' ? 'AI: 팔 타이밍이에요' : 'AI: 좀 더 기다려요'}</div>
+              <div class="ai-verdict-sub">종합 점수 ${d.aiAnalysis.score}점</div>
+            </div>
+          </div>
+          <div class="ai-body">
+            <div class="ai-summary">${d.aiAnalysis.summary}</div>
+            <div style="font-size:11px;font-weight:700;color:#bbb;margin:8px 0 4px;letter-spacing:.05em">뉴스 영향</div>
+            <div class="ai-summary" style="font-size:12px;color:#666">${d.aiAnalysis.news_impact}</div>
+            ${d.news && d.news.length > 0 ? `
+            <div style="font-size:11px;font-weight:700;color:#bbb;margin:8px 0 4px;letter-spacing:.05em">최근 뉴스</div>
+            <div class="ai-news">
+              ${d.news.slice(0,4).map(n => `<div class="ai-news-item">· ${n.headline} <span style="color:#ccc">(${n.source})</span></div>`).join('')}
+            </div>` : ''}
+          </div>` : '<div class="ai-error">AI 분석을 불러오지 못했어요.</div>'
+        }
+      </div>
+
       <div class="detail-toggle" onclick="toggleDetail('${uid}')">
         <span id="toggle-icon-${uid}">▶</span> 지표 상세 보기
       </div>
@@ -500,6 +582,77 @@ function toggleDetail(uid) {
     section.classList.add('open');
     icon.textContent = '▼';
   }
+}
+
+// ── 뉴스 가져오기 (Finnhub) ──────────────────────────
+async function fetchNews(ticker) {
+  try {
+    const to = new Date();
+    const from = new Date(Date.now() - 5 * 86400000); // 5일치
+    const fmt = d => d.toISOString().split('T')[0];
+    const r = await fetch(
+      `https://finnhub.io/api/v1/company-news?symbol=${ticker}&from=${fmt(from)}&to=${fmt(to)}&token=${FINNHUB_KEY}`,
+      { signal: AbortSignal.timeout(6000) }
+    );
+    const news = await r.json();
+    if (!Array.isArray(news)) return [];
+    // 최신 7개만
+    return news.slice(0, 7).map(n => ({
+      headline: n.headline,
+      source: n.source,
+      datetime: n.datetime
+    }));
+  } catch(e) { return []; }
+}
+
+// ── Claude AI 종합 분석 ──────────────────────────────
+async function fetchAIAnalysis(ticker, price, change, periods, news) {
+  const techSummary = Object.entries(periods).map(([key, pd]) => {
+    const label = PERIODS.find(p=>p.key===key)?.label || key;
+    if (!pd.hasData) return `${label}: 데이터 없음`;
+    const items = pd.items.map(i => `${i.name} ${i.badge}(${i.val})`).join(', ');
+    return `${label}(${pd.score}점/${pd.verdict==='buy'?'매수':pd.verdict==='sell'?'매도':'관망'}): ${items}`;
+  }).join('\n');
+
+  const newsSummary = news.length > 0
+    ? news.map((n,i) => `${i+1}. ${n.headline} (${n.source})`).join('\n')
+    : '최근 뉴스 없음';
+
+  const today = new Date().toLocaleDateString('ko-KR');
+
+  const prompt = `당신은 주식 기술적 분석과 뉴스 분석을 결합하는 전문가입니다.
+오늘 날짜: ${today}
+종목: ${ticker}
+현재가: $${price} (${change >= 0 ? '+' : ''}${change}%)
+
+[기술적 분석]
+${techSummary}
+
+[최근 5일 뉴스]
+${newsSummary}
+
+위 데이터를 종합 분석해서 반드시 아래 JSON 형식으로만 답하세요. 다른 텍스트 없이 JSON만:
+{
+  "verdict": "buy 또는 wait 또는 sell 중 하나",
+  "score": 0에서 100 사이 정수,
+  "news_sentiment": "positive 또는 neutral 또는 negative 중 하나",
+  "summary": "기술적 분석과 뉴스를 종합한 2문장 한국어 요약",
+  "news_impact": "뉴스가 주가에 미치는 영향 1문장 한국어"
+}`;
+
+  const r = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 1000,
+      messages: [{ role: 'user', content: prompt }]
+    })
+  });
+  const data = await r.json();
+  const text = data.content?.[0]?.text || '';
+  const clean = text.replace(/```json|```/g, '').trim();
+  return JSON.parse(clean);
 }
 
 async function processTicker(ticker) {
@@ -533,10 +686,28 @@ async function processTicker(ticker) {
     else if (overall.verdict==='sell') conclusionText = `${bads.join('·')} 구간에서 하락 신호가 나오고 있어요. 보유 중이라면 매도 타이밍을 고려해보세요.`;
     else conclusionText = '단기·중기·장기 신호가 엇갈려요. 더 명확한 신호가 나올 때까지 기다리는 게 안전해요.';
 
+    // 뉴스 가져오기 (AI 분석용)
+    const news = await fetchNews(ticker);
+
     scanResults.push({
       ticker, price: quoteRes.price, change: quoteRes.change,
-      periods, overall, overallDesc, conclusionText
+      periods, overall, overallDesc, conclusionText,
+      news, aiAnalysis: null, aiLoading: true
     });
+    renderResults();
+
+    // AI 분석 비동기 (렌더링 블로킹 안 함)
+    fetchAIAnalysis(ticker, quoteRes.price, quoteRes.change, periods, news)
+      .then(ai => {
+        const item = scanResults.find(d => d.ticker === ticker);
+        if (item) { item.aiAnalysis = ai; item.aiLoading = false; }
+        renderResults();
+      })
+      .catch(() => {
+        const item = scanResults.find(d => d.ticker === ticker);
+        if (item) { item.aiLoading = false; }
+        renderResults();
+      });
   } catch(e) {
     scanResults.push({ ticker, error: true, msg: `오류: ${e.message}` });
   }
